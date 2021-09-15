@@ -1,0 +1,401 @@
+---
+title: "Gráficos Interativos em R (Parte 2)"
+author: João Matheus S. K. T. Hneda
+date: "Jun/2019 - PET-Estatística (UFPR)" 
+output:
+  rmdformats::readthedown:
+    highlight: default # "default", "tango", "pygments", "kate", "monochrome", "espresso", "zenburn", "haddock", and "textmate".
+    use_bookdown: TRUE # Sess?es Numeradas
+    toc_depth: 3 # N?mero de t?picos aparecem no sum?rio
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+<html lang="en"> 
+<head>
+<meta charset="utf-8"/>
+
+```{r echo=FALSE, include = FALSE}
+library(tidyverse)
+library(reshape2)
+library(plotly)
+library(sp)
+library(rgeos)
+```
+
+
+# Qual é o objetivo desse artigo?
+
+Quando finalizamos as etapas de formatação e manipulação dos dados, podemos criar estatísticas e visualizações de dados a partir dos mesmos. Quando o assunto é análise descritiva, podemos utilizar a Visualização de Dados para entender o comportamento dos dados e idenficar padrões. Entretanto, muitos pacotes geram *gráficos estáticos* ou inanimados, o que pode decepcionar alguns usuários.
+
+Em contrapartida, os *gráficos interativos* são criados a partir de elementos animados que aumentam a capacidade de retenção de informação através da interatividade. Sabendo disso, esse texto foi escrito como uma continuação do post [Gráficos Interativos em R (Parte 1)]() e mostrar mais algumas bibliotecas do R que auxiliam na confecção de gráficos interativos.
+
+# Plotly
+
+Plotly é um pacote do R utilizado para criar gráficos interativos baseados na biblioteca gráfica plotly.js. É um pacote muito fácil de usar considerando que o usuário já conhece o pacote *ggplot2*. Para transformar os gráficos estáticos do *ggplot2* para gráficos interativos, basta utilizar a função *ggplotly()* do *plotly*.
+
+Além dessa integração com o *ggplot2*, também é possível criar gráficos apenas com as camadas gráficas do *plotly.* A vantagem em utilizar os gráficos originais do *plotly* está na possibilidade de construir uma grande variedade de gráficos interativos. Logo abaixo estão alguns exemplos.
+
+
+
+## Integração com ggplot2
+
+<!-- ```{r message = FALSE, warning = FALSE} -->
+<!-- require(plotly) -->
+<!-- g <- ggplot(data=cars,aes(x=speed,y=dist)) + geom_point() + geom_smooth(method='lm') -->
+<!-- ggplotly(g) -->
+<!-- ``` -->
+
+```{r warning = FALSE, message = FALSE}
+set.seed(100)
+library(ggplot2)
+library(plotly)
+d <- diamonds[sample(nrow(diamonds), 1000), ]
+p <- ggplot(data = d, aes(x = carat, y = price)) +
+  geom_point(aes(text = paste("Clarity:", clarity))) +
+  geom_smooth(aes(colour = cut, fill = cut)) + facet_wrap(~ cut)
+ggplotly(p)
+```
+
+
+## Gráficos puros do Plotly
+
+
+<!-- ```{r} -->
+<!-- plot_ly(z = volcano, type = "surface") -->
+<!-- ``` -->
+
+<!-- ```{r warning = FALSE, message = FALSE} -->
+<!-- library(plotly) -->
+
+<!-- data <- read.csv("https://raw.githubusercontent.com/plotly/datasets/master/gapminderDataFiveYear.csv") -->
+
+<!-- data_2007 <- data[which(data$year == 2007),] -->
+<!-- data_2007 <- data_2007[order(data_2007$continent, data_2007$country),] -->
+<!-- slope <- 2.666051223553066e-05 -->
+<!-- data_2007$size <- sqrt(data_2007$pop * slope) -->
+<!-- colors <- c('#4AC6B7', '#1972A4', '#965F8A', '#FF7070', '#C61951') -->
+
+<!-- p <- plot_ly(data_2007, x = ~gdpPercap, y = ~lifeExp, color = ~continent, size = ~size, colors = colors, -->
+<!--         type = 'scatter', mode = 'markers', sizes = c(min(data_2007$size), max(data_2007$size)), -->
+<!--         marker = list(symbol = 'circle', sizemode = 'diameter', -->
+<!--                       line = list(width = 2, color = '#FFFFFF')), -->
+<!--         text = ~paste('Country:', country, '<br>Life Expectancy:', lifeExp, '<br>GDP:', gdpPercap, -->
+<!--                       '<br>Pop.:', pop)) %>% -->
+<!--   layout(title = 'Life Expectancy v. Per Capita GDP, 2007', -->
+<!--          xaxis = list(title = 'GDP per capita (2000 dollars)', -->
+<!--                       gridcolor = 'rgb(255, 255, 255)', -->
+<!--                       range = c(2.003297660701705, 5.191505530708712), -->
+<!--                       type = 'log', -->
+<!--                       zerolinewidth = 1, -->
+<!--                       ticklen = 5, -->
+<!--                       gridwidth = 2), -->
+<!--          yaxis = list(title = 'Life Expectancy (years)', -->
+<!--                       gridcolor = 'rgb(255, 255, 255)', -->
+<!--                       range = c(36.12621671352166, 91.72921793264332), -->
+<!--                       zerolinewidth = 1, -->
+<!--                       ticklen = 5, -->
+<!--                       gridwith = 2), -->
+<!--          paper_bgcolor = 'rgb(243, 243, 243)', -->
+<!--          plot_bgcolor = 'rgb(243, 243, 243)') -->
+
+<!-- p -->
+<!-- ``` -->
+
+```{r warning=FALSE, message = FALSE}
+library(gapminder)
+p <- gapminder %>%
+  plot_ly(
+    x = ~gdpPercap, 
+    y = ~lifeExp, 
+    size = ~pop, 
+    color = ~continent, 
+    frame = ~year, 
+    text = ~country, 
+    hoverinfo = "text",
+    type = 'scatter',
+    mode = 'markers'
+  ) %>%
+  layout(
+    xaxis = list(
+      type = "log"
+    )
+  )
+p
+```
+
+
+# DyGraphs
+
+*Dygraphs* é um pacote do R construído como interface para a biblioteca Javascript de mesmo nome. Esse pacote tem como ponto forte construir gráficos de séries temporais. Há várias vantagens em utilizar o *Dygraphs*, tais como:
+
+- Facilidade em visualizar objetos da classe xts
+- Rica interatividade com os gráficos
+- Grandes bases de dados alteram pouco a velocidade da interatividade
+
+## Fazendo o primeiro gráfico
+
+```{r warning = FALSE, message = FALSE}
+library(magrittr)
+library(dygraphs)
+x <- nottem
+dygraph(x)
+```
+
+## Adicionando um Seletor Intervalar
+
+```{r warning = FALSE, message = FALSE}
+y <- USAccDeaths
+dygraph(y) %>% dyRangeSelector()
+```
+
+```{r}
+lungDeaths <- cbind(mdeaths, fdeaths)
+x=dygraph(lungDeaths) %>% dyRangeSelector() %>% dyOptions(stackedGraph = TRUE)
+x
+```
+
+## Adicionando os Limites Inferior e Superior
+
+```{r}
+hw <- HoltWinters(AirPassengers)
+p <- predict(hw, n.ahead = 36, prediction.interval = TRUE)
+all <- cbind(AirPassengers, p)
+
+dygraph(all) %>%
+  dySeries("AirPassengers", label = "Atual") %>%
+  dySeries(c("p.lwr", "p.fit", "p.upr"), label = "Predito")
+```
+
+<!-- ```{r} -->
+<!-- require(xts) -->
+<!-- data(sample_matrix) -->
+<!-- m <- tail(sample_matrix, n = 32) -->
+<!-- di <- dygraph(m) %>% -->
+<!--   dyCandlestick() -->
+<!-- di -->
+<!-- ``` -->
+
+# Leaflet
+
+O pacote *Leaflet* é um pacote do R baseado na biblioteca open-source de mesmo nome e desenvolvida em Javascript que permite criar mapas interativos. Esse é um pacote bem fácil de aprender e que permite criar mapas interativos bem agradáveis de se visualizar.
+
+## Fazendo o primeiro gráfico
+
+```{r message = FALSE, warning = FALSE}
+library(leaflet)
+
+m <- leaflet() %>%
+  addTiles() %>%  # Mapa OpenStreetMap
+  addMarkers(lng=-49.267, lat=-25.4102,label="Museu Oscar Niemeyer")
+m 
+```
+
+## Acrescentando legenda
+
+```{r}
+m %>% addPopups(-49.267, -25.4102, 
+                paste("<b> Museu Oscar Niemeyer </b>","<br/>",
+                      "Rua Marechal Hermes, 999","<br/>",
+                      "Curitiba - PR, Centro Cívico"))
+```
+
+
+## Modificando temas
+
+```{r}
+m %>% addProviderTiles(providers$CartoDB.Positron)
+m %>% addProviderTiles(providers$Stamen.Toner)
+```
+
+# Conclusão
+
+Esse texto teve como objetivo mostrar algumas bibliotecas do R que auxiliam na confecção de gráficos interativos e para fins de registro pessoal. Esse post não teve como objetivo mostrar todas as funções de cada pacote, mas mostrar as principais funcionalidades de cada um. Dessa forma, caso tenha interesse em aprender mais sobre a criação de gráficos interativos, basta entrar em contato com o autor ou fazer uma pesquisa mais específica nos sites de pesquisa.
+
+Obrigado por ter lido.
+
+# Referências
+
+**Links**
+
+- [Plotly](https://plot.ly/r)
+- [Dygraphs](http://dygraphs.com/)
+- [Dygraphs for R](https://rstudio.github.io/dygraphs/)
+- [Leaflet](https://leafletjs.com/)
+- [Leaflet for R](https://rstudio.github.io/leaflet/)
+- [Rbokeh](https://hafen.github.io/rbokeh/)
+- [NetworkD3](https://christophergandrud.github.io/networkD3/)
+- [rgl](https://cran.r-project.org/web/packages/rgl/vignettes/rgl.html)
+- [Echarts4R](https://echarts4r.john-coene.com/)
+- [Animating Your Data Visualizations Like a Boss Using R](https://towardsdatascience.com/animating-your-data-visualizations-like-a-boss-using-r-f94ae20843e3)
+- [Guia prático da visualização de dados - tableau](https://www.tableau.com/pt-br/learn/articles/data-visualization)
+
+---
+
+<center> <img src="logo-pet-azul.png" style="width:300px;height:200px;"> </center>
+
+---
+
+
+<!-- # Rbokeh -->
+
+<!-- ```{r} -->
+<!-- require(rbokeh) -->
+<!-- x <- figure(width = 900, height = 400) %>% -->
+<!--   ly_points(Sepal.Length, Sepal.Width, data = iris, -->
+<!--     color = Species, glyph = Species, -->
+<!--     hover = list(Sepal.Length, Sepal.Width)) -->
+<!-- x -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- h <- figure(width = 900, height = 300) %>% -->
+<!--   ly_hist(eruptions, data = faithful, breaks = 40, freq = FALSE) %>% -->
+<!--   ly_density(eruptions, data = faithful) -->
+<!-- h -->
+<!-- ``` -->
+
+<!-- # Crosstalk -->
+
+<!-- ```{r} -->
+<!-- library(crosstalk) -->
+<!-- # define a shared data object -->
+<!-- d <- SharedData$new(mtcars) -->
+<!-- # make a scatterplot of disp vs mpg -->
+<!-- scatterplot <- plot_ly(d, x = ~mpg, y = ~disp) %>% -->
+<!--   add_markers(color = I("navy")) -->
+<!-- # define two subplots: boxplot and scatterplot -->
+<!-- subplot( -->
+<!--   # boxplot of disp -->
+<!--   plot_ly(d, y = ~disp) %>% -->
+<!--     add_boxplot(name = "overall", -->
+<!--                 color = I("navy")), -->
+<!--   # scatterplot of disp vs mpg -->
+<!--   scatterplot, -->
+<!--   shareY = TRUE, titleX = T) %>% -->
+<!--   layout(dragmode = "select") -->
+<!-- ``` -->
+
+
+<!-- # NetworkD3 -->
+
+<!-- ```{r} -->
+<!-- library(networkD3) -->
+<!-- data(MisLinks, MisNodes) -->
+<!-- forceNetwork(Links = MisLinks, Nodes = MisNodes, Source = "source", -->
+<!--              Target = "target", Value = "value", NodeID = "name", -->
+<!--              Group = "group", opacity = 0.9, Nodesize = 3, -->
+<!--              linkDistance = 100, fontSize = 20) -->
+<!-- ``` -->
+
+
+<!-- # Echarts4R -->
+
+<!-- ```{r} -->
+<!-- library(echarts4r) -->
+<!-- #library(echarts4r.assets) -->
+<!-- e1 <- iris %>% -->
+<!--   group_by(Species) %>% -->
+<!--   e_charts( -->
+<!--     Sepal.Length, -->
+<!--     elementId = "chart" -->
+<!--   ) %>% -->
+<!--   e_scatter(Petal.Length, Sepal.Width) %>% -->
+<!--   e_datazoom(show = FALSE, y_index = 0) %>% -->
+<!--   e_x_axis(min = 4) %>% -->
+<!--   e_highlight( -->
+<!--     series_name = list("setosa", "versicolor", "virginica"), -->
+<!--     btn = "high" -->
+<!--   ) %>% -->
+<!--   e_downplay( -->
+<!--     series_name = list("setosa", "versicolor", "virginica"), -->
+<!--     btn = "down" -->
+<!--   ) %>% -->
+<!--   e_button( -->
+<!--     "high", "Highlight", -->
+<!--     class = "btn btn-primary", -->
+<!--     position = "bottom" -->
+<!--   ) %>% -->
+<!--   e_button( -->
+<!--     "down", "Downplay", -->
+<!--     class = "btn btn-default", -->
+<!--     position = "bottom" -->
+<!--   ) %>% -->
+<!--   e_legend(FALSE) %>% -->
+<!--   e_title("Connect charts") %>% -->
+<!--   e_tooltip( -->
+<!--     trigger = "item", -->
+<!--     axisPointer = list( -->
+<!--       type = "cross" -->
+<!--     ) -->
+<!--   ) %>% -->
+<!--   e_image_g( -->
+<!--     left = 50, -->
+<!--     top = 30, -->
+<!--     z = 999, -->
+<!--     style = list( -->
+<!--       image = "reference/figures/logo.png", -->
+<!--       width = 70, -->
+<!--       height = 75, -->
+<!--       opacity = .95 -->
+<!--     ) -->
+<!--   ) %>% -->
+<!--   e_text_style(fontFamily = "Raleway") -->
+<!-- e1 -->
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- liquid <- data.frame(val = c(0.6, 0.5, 0.4)) -->
+
+<!-- liquid %>% -->
+<!--   e_charts() %>% -->
+<!--   e_liquid(val) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- v <- LETTERS[1:10] -->
+<!-- matrix <- data.frame( -->
+<!--   x = sample(v, 300, replace = TRUE), -->
+<!--   y = sample(v, 300, replace = TRUE), -->
+<!--   z1 = rnorm(300, 10, 1), -->
+<!--   z2 = rnorm(300, 10, 1), -->
+<!--   stringsAsFactors = FALSE -->
+<!-- ) %>% -->
+<!--   dplyr::group_by(x, y) %>% -->
+<!--   dplyr::summarise( -->
+<!--     z1 = sum(z1), -->
+<!--     z2 = sum(z2) -->
+<!--   ) %>% -->
+<!--   dplyr::ungroup() -->
+
+<!-- trans <- list(opacity = 0.4) # transparency -->
+<!-- emphasis <- list(itemStyle = list(color = "#313695")) -->
+
+<!-- matrix %>% -->
+<!--   e_charts(x) %>% -->
+<!--   e_bar_3d(y, z1, stack = "stack", name = "Serie 1", itemStyle = trans, emphasis = emphasis) %>% -->
+<!--   e_bar_3d(y, z2, stack = "stack", name = "Serie 2", itemStyle = trans, emphasis = emphasis) %>% -->
+<!--   e_legend() -->
+<!-- ``` -->
+
+<!-- </head> -->
+
+
+<!-- # Referências -->
+
+<!-- **Links** -->
+
+
+<!-- **Para Curiosos** -->
+
+
+
+<!-- --- -->
+
+<!-- <center> <img src="logo-pet-azul.png" style="width:300px;height:200px;"> </center> -->
+
+<!-- --- -->
+

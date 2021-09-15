@@ -1,0 +1,611 @@
+---
+title: "Gráficos Interativos em R (Parte 1)"
+author: João Matheus S. K. T. Hneda
+date: "Jun/2019 - PET-Estatística (UFPR)" 
+output:
+  rmdformats::readthedown:
+    highlight: default # "default", "tango", "pygments", "kate", "monochrome", "espresso", "zenburn", "haddock", and "textmate".
+    use_bookdown: TRUE # Sess?es Numeradas
+    toc_depth: 3 # N?mero de t?picos aparecem no sum?rio
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+<html lang="en"> 
+<head>
+<meta charset="utf-8"/>
+
+```{r echo=FALSE, include = FALSE}
+library(tidyverse)
+library(reshape2)
+library(plotly)
+library(sp)
+library(rgeos)
+```
+
+```{r echo=FALSE, warning = FALSE, message = FALSE}
+grafico1 <- ggplot(aes(x = total_bill, y = tip, col=sex), data = tips) +
+  geom_point() +
+  geom_smooth(method = 'lm', col=4) +
+  theme(legend.position = "none")
+
+grafico2 <- data.frame(y=rnorm(1000)) %>%
+  ggplot(data=., mapping = aes(x=y)) +
+  geom_density(col=4, fill=2, alpha=0.3)
+
+grafico3 <- ggplot(data=mpg, aes(displ, hwy)) +
+            geom_point() +
+            facet_wrap(~year)
+
+coord_circle <- function(centre = c(0, 0), r = 1, n = 1000) {
+  data_frame(
+    x = seq(from = 0 - r, to = 0 + r, length.out = n %/% 2),
+    y = sqrt(r^2 - x^2)
+  ) %>% bind_rows(., -.) %>%
+    mutate(x = x + centre[1], y = y + centre[2])
+}
+
+
+create_poly <- function(...) {
+  args <- list(...)
+  SpatialPolygons(
+    lapply(
+      X = seq_along(args),
+      FUN = function(x) {
+        Polygons(list(Polygon(as.data.frame(args[[x]]))), names(args)[x])
+      }
+    )
+  )
+}
+
+
+echancrure <- function(to_var, by_var, p = 0.1) {
+  ind <- which(by_var >= -0.08 & by_var <= 0.08 & to_var > 0)
+  to_var[ind] <- to_var[ind] - p
+  ind <- which(by_var >= -0.08 & by_var <= 0.08 & to_var < 0)
+  to_var[ind] <- to_var[ind] + p
+  return(to_var)
+}
+
+
+
+# BB-8 geometries ---------------------------------------------------------
+
+
+# droid_body -------------------------------------------------------------------
+
+# shape of the droid_body : two circles and a vertical line
+droid_body <- coord_circle(centre = c(0, 0), r = 1)
+droid_body$xvert <- 0
+droid_body$yvert <- droid_body$x
+droid_body <- bind_cols(
+  droid_body,
+  coord_circle(centre = c(0, 0), r = 0.35, n = nrow(droid_body)) %>% select(xint = x, yint = y)
+)
+
+# grey shapes in the central inner circle
+droid_body_rect <- data_frame(
+  x = c(-0.5, 0.5, 0.5, -0.5, c(-0.5, 0.5, 0.5, -0.5) - 0.2, c(-0.5, 0.5, 0.5, -0.5) + 0.2),
+  y = c(-0.6, 0.4, 0.6, -0.4, c(-0.6, 0.4, 0.6, -0.4) + 0.2, c(-0.6, 0.4, 0.6, -0.4) - 0.2),
+  group = rep(1:3, each = 4)
+)
+# a polygon for calculate the intersection between the grey shapes and the inner circle
+polyrect <- create_poly(
+  "polyrect1" = droid_body_rect[droid_body_rect$group == 1, 1:2],
+  "polyrect2" = droid_body_rect[droid_body_rect$group == 2, 1:2],
+  "polyrect3" = droid_body_rect[droid_body_rect$group == 3, 1:2]
+)
+
+polycircle <- create_poly(
+  "polycircle" = droid_body[, c("xint", "yint")]
+)
+# plot(polyrect); plot(polycircle, add = TRUE)
+polyrect <- gIntersection(spgeom1 = polyrect, spgeom2 = polycircle)
+# plot(polyrect); plot(polycircle, add = TRUE)
+
+# fortify the polygon for ggplot
+droid_body_rect <- fortify(polyrect)
+
+
+# Central ring (orange)
+ring <- coord_circle(centre = c(0, 0), r = 0.4)
+ring$y <- echancrure(to_var = ring$y, by_var = ring$x, p = 0.1)
+ring$x <- echancrure(to_var = ring$x, by_var = ring$y, p = 0.1)
+ring <- bind_rows(
+  ring %>% mutate(group = (x >= 0) * 1),
+  coord_circle(centre = c(0, 0), r = 0.55, n = nrow(ring)) %>% mutate(y = -y, group = (x >= 0) * 1)
+) %>%
+  filter(group == 1) # oups something went wrong
+ring <- bind_rows(ring, ring %>% mutate(x = -x, group = 2))
+
+
+
+
+# ring left and right
+# we make a copy of the right part of the central ring
+ring_left <- ring %>% filter(group == 1)
+# and we shift the ring center
+ring_left$x <- ring_left$x - 1.3
+
+# the same ...
+ring_right <- ring %>% filter(group == 2)
+ring_right$x <- ring_right$x + 1.3
+
+# we creta a polygon for the intersection with the droid_body circle
+polyring <- create_poly(
+  "polyring_g" = ring_left[, c("x", "y")],
+  "polyring_d" = ring_right[, c("x", "y")]
+)
+
+polydroid_body <- create_poly("polydroid_body" = droid_body[, c("x", "y")])
+
+# plot(polyring); plot(polydroid_body, add = TRUE)
+
+polyring <- gIntersection(spgeom1 = polyring, spgeom2 = polydroid_body)
+fort_ring <- fortify(polyring)
+
+
+# the horizontal line of the body (in two parts)
+ligne_hori <- data_frame(
+  x = c(-1, range(ring$x), 1),
+  y = 0,
+  group = c(1, 1, 2, 2)
+)
+
+
+# droid head --------------------------------------------------------------------
+
+droid_head <- coord_circle(centre = c(0, 1.02), r = 0.52) %>%
+  filter(y >= 1.02) %>%
+  mutate(group = 1, fill = "white", col= "black") %>%
+  bind_rows(
+    data_frame(
+      x = c(-0.52, -0.4, 0.4, 0.52),
+      y = c(1.02, 0.95, 0.95, 1.02),
+      group = 2, fill = "white", col= "black"
+    )
+  )
+
+
+
+# Grey bars in droid's head
+poly_head_grey <- create_poly(
+  "poly_head_grey_haut" = data_frame(
+    x = c(-0.52, 0.52, 0.52, -0.52),
+    y = c(1.44, 1.44, 1.51, 1.51)
+  ),
+  "poly_head_grey_bas" = data_frame(
+    x = c(-0.52, 0.52, 0.52, -0.52),
+    y = c(1.02, 1.02, 1.07, 1.07)
+  )
+)
+
+polydroid_head <- create_poly("polydroid_head" = droid_head[droid_head$group == 1, c("x", "y")])
+
+poly_head_grey <- gIntersection(spgeom1 = poly_head_grey, spgeom2 = polydroid_head)
+fort_droid_headrectgris <- fortify(poly_head_grey)
+
+
+
+# orange bars
+poly_head_orange <- create_poly(
+  "poly_head_orange1" = data_frame(
+    x = c(-0.52, 0.52, 0.52, -0.52),
+    y = c(1.38, 1.38, 1.42, 1.42)
+  ),
+  "poly_head_orange2" = data_frame(
+    x = c(-0.35, -0.35, -0.2, -0.2),
+    y = c(1.07, 1.15, 1.15, 1.07)
+  ),
+  "poly_head_orange3" = data_frame(
+    x = c(-0.55, -0.55, -0.45, -0.45),
+    y = c(1.07, 1.15, 1.15, 1.07)
+  ),
+  "poly_head_orange4" = data_frame(
+    x = c(0.44, 0.44, 0.47, 0.47),
+    y = c(1.07, 1.15, 1.15, 1.07)
+  )
+)
+
+poly_head_orange <- gIntersection(spgeom1 = poly_head_orange, spgeom2 = polydroid_head)
+fort_droid_headrectorange <- fortify(poly_head_orange)
+
+
+polygones_droid_head <- bind_rows(
+  fort_droid_headrectgris %>% select(-piece) %>%
+    mutate(group = as.numeric(as.character(group)), fill = "#8E8E9C", col= "black"),
+  fort_droid_headrectorange %>% select(-piece) %>% 
+    mutate(group = as.numeric(as.character(group)) * 2, fill = "#DF8D5D", col= "black")
+)
+
+
+# Eyes
+droid_eyes <- bind_rows(
+  #coord_circle(centre = c(0, 1.35), r = 0.14) %>% mutate(group = 1, fill = "white", col = "white"),
+  coord_circle(centre = c(0, 1.35), r = 0.12) %>% mutate(group = 2, col = "white"),
+  coord_circle(centre = c(0, 1.35), r = 0.11) %>% mutate(group = 1, col = "grey40"),
+  coord_circle(centre = c(0, 1.35), r = 0.10) %>% mutate(group = 3, fill = "black", col = "grey40"),
+  coord_circle(centre = c(0, 1.35), r = 0.08) %>% mutate(group = 4, fill = "black", col = "black"),
+  coord_circle(centre = c(0, 1.16), r = 0.04) %>% mutate(group = 5, fill = "#76B1DE", col = "black"),
+  coord_circle(centre = c(0.25, 1.20), r = 0.08) %>% mutate(group = 6, fill = "black", col = "black"),
+  #coord_circle(centre = c(0.25, 1.20), r = 0.07) %>% mutate(group = 7, fill = "white", col = "black"),
+  coord_circle(centre = c(0.25, 1.20), r = 0.06) %>% mutate(group = 8, col = "grey40"),
+  coord_circle(centre = c(0.25, 1.20), r = 0.05) %>% mutate(group = 7, col = "grey40"),
+  coord_circle(centre = c(0.25, 1.20), r = 0.04) %>% mutate(group = 9, fill = "black", col = "black")
+)
+
+eye_line <- data_frame(
+  x = 0,
+  y = c(1.07, 1.16-0.04)
+)
+
+# Antennas
+antennas <- data_frame(
+  x = c(0.01, 0.01, 0.10, 0.10),
+  y = c(sqrt(0.52^2 - 0.01^2) + 1.02, sqrt(0.52^2 - 0.01^2) + 1.02 + 0.15,
+        sqrt(0.52^2 - 0.1^2) + 1.02, sqrt(0.52^2 - 0.1^2) + 1.02 + 0.25),
+  group = c(1, 1, 2, 2)
+)
+
+
+# bb-8/ggplot2 ------------------------------------------------------------
+
+bb8 <- ggplot(data = droid_body) +
+  coord_fixed() +
+  geom_polygon(mapping = aes(x = x, y = y), fill = "white", col = "black") +
+  geom_polygon(data = droid_body_rect, mapping = aes(x = long, y = lat, group = group), fill = "#8E8E9C") +
+  geom_path(mapping = aes(x = xvert, y = yvert)) +
+  geom_path(mapping = aes(x = xint, y = yint)) +
+  geom_polygon(data = ring, mapping = aes(x = x, y = y, group = group), fill = "#DF8D5D", col = "#DF8D5D") +
+  geom_path(data = ligne_hori, mapping = aes(x = x, y = y, group = group)) +
+  geom_polygon(data = fort_ring , mapping = aes(x = long, y = lat, group = group), fill = "#DF8D5D") +
+  geom_polygon(data = droid_head, mapping = aes(x = x, y = y, group = group, fill = fill, col = col)) +
+  geom_polygon(data = polygones_droid_head, mapping = aes(x = long, y = lat, group = group, fill = fill, col = col)) +
+  geom_polygon(data = droid_eyes, mapping = aes(x = x, y = y, group = group, fill = fill, col = col)) +
+  scale_fill_identity() + scale_color_identity() +
+  geom_line(data = eye_line, mapping = aes(x = x, y = y)) +
+  geom_line(data = antennas, mapping = aes(x = x, y = y, group = group), col = "black") +
+  theme(legend.position = "none") +
+  coord_cartesian(xlim=c(-1.5,1.5),ylim=c(-1,1.8))
+  
+
+
+subplot(grafico1,grafico3,grafico2,bb8,nrows=2)
+
+```
+
+
+# Qual é o objetivo desse artigo?
+
+Quando finalizamos as etapas de formatação e manipulação dos dados, podemos criar estatísticas e visualizações de dados a partir dos mesmos. Quando o assunto é análise descritiva, podemos utilizar a Visualização de Dados para entender o comportamento dos dados e idenficar padrões. Entretanto, muitos pacotes geram *gráficos estáticos* ou inanimados, o que pode decepcionar alguns usuários.
+
+Em contrapartida, os *gráficos interativos* são criados a partir de elementos animados que aumentam a capacidade de retenção de informação através da interatividade. Sabendo disso, esse post foi escrito com o objetivo de apresentar alguns conceitos envolvendo Visualização de Dados e mostrar algumas bibliotecas do R que auxiliam na confecção de gráficos interativos.
+
+
+# Conceitos e htmlwidgets
+
+Quando temos interesse em analisar os dados e identificar um problema de negócio, logo pensamos nas possíveis tendências e correlações que as variáveis de estudo podem ter. Para isso, muito se fala na vantagem de se criar **visualizações** para identificar padrões de forma rápida e direta.
+
+Mas o que é **Visualização de Dados?**
+
+---
+
+<center> <font size="3"> **Visualização de Dados** é a representação de dados em formato gráfico. </font> </center>
+
+---
+
+E o que é um **gráfico**?
+
+---
+
+<center> <font size="3"> O **gráfico** é uma representação com **forma geométrica** e que é construída a partir de informações obtidas dos dados. </font> </center>
+
+---
+
+Isso significa que o gráfico é um desenho que tem dimensões, forma, tamanho, comprimento, área, volume, etc.
+
+Dentro do R, existem vários pacotes que podem ser utilizados para criar visualizações estáticas e interativas. Vale lembrar que os gráficos interativos geralmente têm mais aceitabilidade dos analistas, e por conta disso, esse post mostra apenas alguns pacotes para criar visualizações desse tipo.  
+
+Dentro desse contexto, o pacote [htmlwidgets](http://www.htmlwidgets.org/index.html) foi criado para auxiliar na criação de gráficos interativos. Esse pacote funciona como um [framework](http://www.htmlwidgets.org/develop_intro.html) para embutir dentro do R as visualizações feitas em JavaScript. [HTML widgets](http://www.htmlwidgets.org/index.html) pode ser usado nos scripts em R e também ser embutido nos relatórios de R Markdown e aplicações em Shiny.
+
+Vários pacotes já foram criados utilizando o framework, tais como:
+
+- [Plotly](https://plot.ly/r)
+- [HighCharter](http://jkunst.com/highcharter/)
+- [Dygraphs](https://rstudio.github.io/dygraphs/)
+- [Leaflet](https://rstudio.github.io/leaflet/)
+- [Rbokeh](https://hafen.github.io/rbokeh/)
+- [NetworkD3](https://christophergandrud.github.io/networkD3/)
+- [Echarts4R](https://echarts4r.john-coene.com/)
+- Entre outros
+
+A vantagem em se utilizar esses pacotes está em criar uma visualização interativa com apenas uma linha ou duas de código em R.
+
+# HighCharter
+
+`HighCharter` é uma interface R que faz uso da biblioteca gráfica *Highcharts* <http://www.highcharts.com/> construída originalmente em javascript. Com essa biblioteca é possível construir vários tipos de gráficos interativos para diferentes objetos em R.
+
+## Fazendo os Primeiros Gráficos
+
+O pacote **HighCharter** permite criar gráficos utilizando duas funções diferentes:
+
+- highchart()
+- hchart()
+
+### highchart()
+
+Se você está familiarizado com o pacote **ggplot2**, essa função é bem similar a **ggplot()**. Semelhantemente a essa função, diferentes argumentos podem ser utilizados na **highchart()** para alterar os principais elementos gráficos e mapear as variáveis.
+
+### hchart()
+
+**hchart()** é uma função genérica para plotar diferentes gráficos de forma mais rápida para diferentes classes de objetos. Novamente comparando com o **ggplot2**, essa função é similar a **qplot()**. Para saber quais são os métodos suportados da função, basta utilizar o comando **methods(hchart)**.
+
+```{r echo = FALSE, message=FALSE}
+library(magrittr)
+library(highcharter)
+```
+
+```{r}
+methods(hchart)
+```
+
+Em resumo, **hchart()** será usado quando deseja-se fazer um gráfico mais rápido e **highchart()** quando deseja-se fazer gráficos mais complicados/robustos.
+
+Além do comando **hchart()** utilizado outros comandos também podem ser utilizados, como **hc_title()** e **hc_legend()** para alterar o título e mostrar/esconder a legenda dos dados, respectivamente. Esses comandos são utilizados junto com o operador %>% do pacote **magrittr**.
+
+
+```{r}
+library(magrittr)
+library(highcharter)
+
+# Carregando os dados
+data(tips, package = 'reshape2')
+data(diamonds, package = 'ggplot2')
+
+
+# Construindo os gráficos
+hchart(diamonds$price, color="#0000FF") %>% hc_title(text = "Histograma")
+hchart(tips$sex) %>% hc_title(text = "Gráfico de Barras") %>% hc_legend(enabled = F)
+hchart(AirPassengers) %>% hc_title(text = "Série Temporal") %>% hc_legend(enabled = F)
+```
+
+## Gráfico de Linhas
+
+```{r}
+highchart() %>%
+  hc_add_series(data = women$weight) %>%
+  hc_add_series(data = women$height)
+```
+
+Como padrão, **highchart()** assume como padrão um gráfico de linhas. Ele também assume nome padrão para a série dos dados (i.e. Series 1, Series 2, etc). Mas também é possível alterar o nome da série`(name)`, cor `(color)`, entre outros. 
+
+```{r}
+highchart() %>%
+  hc_add_series(data = head(diamonds$depth,30), name = "depth", color = "red") %>%
+  hc_add_series(data = head(diamonds$price,30), name = "price", color = "blue")
+```
+
+```{r}
+data(citytemp)
+hc <- highchart() %>%
+  hc_plotOptions(line = list(color = "blue",
+                             marker = list(
+                               fillColor = "white",
+                               lineWidth = 2,
+                               lineColor = NULL
+                               )
+  )) %>%
+  hc_add_series(name = "Tokyo", data = citytemp$tokyo) %>%
+  hc_add_series(name = "London", data = citytemp$london,
+               marker = list(fillColor = "black"))
+
+hc %>%
+   hc_add_series(name = "New York",
+                data = citytemp$new_york,
+                color = "red")
+```
+
+## Gráfico de Densidade
+
+```{r}
+highchart() %>%
+  hc_add_series(data = density(rnorm(300)),
+                type = "area",
+                color = "white",
+                fillColor = "rgba(0,0,255,0.3)",
+                marker = list(lineColor = "red",
+                              lineWidth = 2,
+                              fillColor = "white")) %>%
+  hc_legend(enabled = F)
+```
+
+## Gráfico de Barras
+```{r}
+highchart() %>%
+  hc_chart(type ="column") %>%
+  hc_xAxis(categories = levels(tips$day)) %>%
+  hc_add_series(data = tapply(tips$total_bill,tips$day,sum))
+```
+
+
+<!-- ```{r} -->
+<!-- highchart() %>% -->
+<!--   hc_chart(type ="bar") %>% -->
+<!--   hc_xAxis(categories = levels(tips$day)) %>% -->
+<!--   hc_add_series(data = tapply(tips$total_bill,tips$day,sum)) -->
+<!-- ``` -->
+
+
+## Gráfico de Dispersão
+```{r}
+hchart(tips, type="scatter",hcaes(x="total_bill", y="tip")) %>% hc_title(text = "Gráfico de Dispersão")
+```
+
+```{r}
+hchart(tips, type="scatter",hcaes(x="total_bill", y="tip", group="day")) %>% hc_title(text = "Gráfico de Dispersão por Grupo")
+
+```
+
+<!-- ```{r} -->
+<!-- highchart() %>% -->
+<!--   hc_add_series(mpg, "scatter", hcaes(x = "displ", y = "cty", group = "class")) %>% -->
+<!--    hc_xAxis(title = list(text = "displ")) %>% -->
+<!--    hc_yAxis(title = list(text = "cty")) %>% -->
+<!--    hc_title(text = "Gráfico de Dispersão por Grupo") -->
+
+<!-- ``` -->
+
+## Gráfico de Setores
+
+```{r warning = FALSE, message = FALSE}
+highchart() %>%
+ hc_chart(type = "pie") %>%
+ hc_add_series_labels_values(labels = levels(tips$day), values = tapply(tips$total_bill,tips$day,sum)) %>%
+  hc_tooltip(pointFormat = paste('{point.y}<br/><b>{point.percentage:.1f}%</b>'),enabled= TRUE)
+```
+
+
+## Gráfico de Candlestick
+
+```{r message = FALSE, warning = FALSE}
+library(quantmod) # Pacote para carregar os dados do mercado financeiro
+x <- getSymbols("IBM", auto.assign = FALSE)
+x <- hchart(x)
+x
+```
+
+
+## Mapa
+
+Para gerar o mapa do Brasil, foram utilizadas as estimativas do total da população das Unidades da Federação brasileiras disponibilizadas pelo IBGE (Instituto Brasileiro de Geografia e Estatística) no link [Dados IBGE](https://www.ibge.gov.br/estatisticas/sociais/populacao/9103-estimativas-de-populacao.html?=&t=resultados).
+
+
+```{r message = FALSE, warning = FALSE}
+#options(encoding="UTF-8")
+
+map <- get_data_from_map(download_map_data("countries/br/br-all"))
+map2 <- download_map_data("countries/br/br-all")
+# str(map)
+
+## Carregando a base de dados formatada e baixada do site do IBGE
+
+xls <- readxl::read_xls(path = "estimativa_TCU_2018_20190213.xls",
+                         sheet = 1,
+                         range = "A1:B28")
+
+colnames(xls) <- c("Estado","Populacao")
+library(magrittr)
+library(dplyr)
+dados <- map[,c("woe-name","hc-a2")] %>% left_join(x=.,y=xls, by = c("woe-name" = "Estado"))
+# print(dados, n = Inf)
+
+hcmap(map="countries/br/br-all",
+      name = "Brasil",
+      data = dados,
+      value = "Populacao",
+      joinBy = "hc-a2",
+      dataLabels = list(enabled = TRUE, format = '{point.hc-a2}'))
+```
+
+<!-- ```{r} -->
+<!-- library(dplyr) -->
+<!-- mapdata <- get_data_from_map(download_map_data("countries/us/us-all")) -->
+<!-- set.seed(1234) -->
+
+<!-- data_fake <- mapdata %>% -->
+<!--   select(code = `hc-a2`) %>% -->
+<!--   mutate(value = 1e5 * abs(rt(nrow(.), df = 10))) -->
+
+<!-- h <- hcmap("countries/us/us-all", data = data_fake, value = "value", -->
+<!--       joinBy = c("hc-a2", "code"), name = "Fake data", -->
+<!--       dataLabels = list(enabled = TRUE, format = '{point.name}'), -->
+<!--       borderColor = "#FAFAFA", borderWidth = 0.1, -->
+<!--       tooltip = list(valueDecimals = 2, valuePrefix = "$", valueSuffix = " USD")) -->
+<!-- h -->
+<!-- ``` -->
+
+
+```{r eval=FALSE, echo = FALSE}
+library(MASS)
+
+dscars <- round(mvrnorm(n = 20, mu = c(1, 1), Sigma = matrix(c(1,0,0,1),2)), 2)
+dsplan <- round(mvrnorm(n = 10, mu = c(3, 4), Sigma = matrix(c(2,.5,2,2),2)), 2)
+dstrck <- round(mvrnorm(n = 15, mu = c(5, 1), Sigma = matrix(c(1,.5,.5,1),2)), 2)
+
+h <- highchart() %>%
+  hc_chart(type = "scatter", zoomType = "xy") %>%
+  hc_tooltip(
+    useHTML = TRUE,
+    pointFormat = paste0("<span style=\"color:{series.color};\">{series.options.icon}</span>",
+                         "{series.name}: <b>[{point.x}, {point.y}]</b><br/>")
+  ) %>%
+  hc_add_series(data = list_parse2(as.data.frame(dscars)),
+                marker = list(symbol = fa_icon_mark("car")),
+                icon = fa_icon("car"), name = "car") %>%
+  hc_add_series(data = list_parse2(as.data.frame(dsplan)),
+                marker = list(symbol = fa_icon_mark("plane")),
+                icon = fa_icon("plane"), name = "plane") %>%
+  hc_add_series(data = list_parse2(as.data.frame(dstrck)),
+                marker = list(symbol = fa_icon_mark("truck")),
+                icon = fa_icon("truck"), name = "truck")
+h
+```
+
+
+<!-- ```{r eval=FALSE, echo=FALSE} -->
+<!-- h <- highchart() %>% -->
+<!--   hc_title(text = "I'm a pirate looking chart") %>% -->
+<!--   hc_xAxis(categories = month.abb) %>% -->
+<!--   hc_defs(patterns = list( -->
+<!--     list(id = 'custom-pattern', -->
+<!--          path = list(d = 'M 0 0 L 10 10 M 9 -1 L 11 1 M -1 9 L 1 11', -->
+<!--                      stroke = "black", -->
+<!--                      strokeWidth = 1 -->
+<!--          ) -->
+<!--     ) -->
+<!--   )) %>% -->
+<!--   hc_add_series(data = c(7.0, 6.9, 9.5, 14.5, 18.2, 21.5, 25.2, -->
+<!--                          26.5, 23.3, 18.3, 13.9, 9.6), -->
+<!--                 type = "area", -->
+<!--                 fillColor = 'url(#custom-pattern)') %>% -->
+<!--   hc_add_theme(hc_theme_handdrawn()) -->
+<!-- h -->
+<!-- ``` -->
+
+
+```{r}
+data(unemployment)
+
+hcmap("countries/us/us-all-all", data = unemployment,
+      name = "Unemployment", value = "value", joinBy = c("hc-key", "code"),
+      borderColor = "transparent") %>%
+  hc_colorAxis(dataClasses = color_classes(c(seq(0, 10, by = 2), 50))) %>%
+  hc_legend(layout = "vertical", align = "right",
+            floating = TRUE, valueDecimals = 0, valueSuffix = "%")
+```
+
+
+# Conclusão
+
+Esse texto teve como objetivo apresentar alguns conceitos envolvendo Visualização de Dados, mostrar alguns comandos da biblioteca gráfica Highcharter do R e para fins de registro pessoal. Esse post não teve como objetivo mostrar todas as funções do pacote, mas mostrar as principais funcionalidades dele. Caso tenha interesse em aprender mais sobre a criação de gráficos interativos, consulte o post [Gráficos Interativos em R (Parte 2)]().
+
+Obrigado por ter lido.
+
+# Referências
+
+**Links**
+
+- [BB8 - ggplot2](https://www.r-graph-gallery.com/144-droid-bb-8-data-art/)
+- [htmlwidgets](http://www.htmlwidgets.org/index.html)
+- [ggplot2](https://ggplot2.tidyverse.org/)
+- [HighCharts](https://www.highcharts.com/)
+- [HighCharter](http://jkunst.com/highcharter/)
+- [Dados IBGE](https://www.ibge.gov.br/estatisticas/sociais/populacao/9103-estimativas-de-populacao.html?=&t=resultados)
+
+---
+
+<center> <img src="logo-pet-azul.png" style="width:300px;height:200px;"> </center>
+
+---
